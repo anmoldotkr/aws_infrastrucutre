@@ -1,0 +1,9 @@
+.assume_role:
+  id_tokens:
+    GITLAB_OIDC_TOKEN:
+      aud: https://git.impressicocrm.com
+  before_script:
+    - export AWS_ROLE_ARN="${ROLE_ARN}"
+    - export AWS_WEB_IDENTITY_TOKEN_FILE="$(pwd)/web_identity_token"
+    - echo "$GITLAB_OIDC_TOKEN" > "$AWS_WEB_IDENTITY_TOKEN_FILE"
+    - aws sts get-caller-identity

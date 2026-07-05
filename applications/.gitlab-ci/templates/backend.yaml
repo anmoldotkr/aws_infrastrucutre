@@ -1,0 +1,26 @@
+node-backend-build:
+  extends: .assume_role
+  stage: build
+  image:
+    name: amazon/aws-cli:2.34.18
+    entrypoint: [""]
+  script:
+    - yum install docker git -y
+    - chmod +x .gitlab-ci/scripts/backend/backend-build.sh
+    - ./.gitlab-ci/scripts/backend/backend-build.sh
+  rules:
+    - if: '$PIPELINE_TYPE == "backend" && $service == "node"' # <-- Double check spaces here
+
+ndoe-backend-deploy:
+  extends: .assume_role
+  stage: deploy
+  image:
+    name: amazon/aws-cli:2.34.18
+    entrypoint: [""]
+  script:
+    - chmod +x .gitlab-ci/scripts/backend/backend-deploy.sh
+    - ./.gitlab-ci/scripts/backend/backend-deploy.sh
+  rules:
+    - if: '$PIPELINE_TYPE == "backend" && $environment == "dev" && $service == "node"'
+      variables:
+        TARGET_INSTANCE_ID: "i-xxxxxxxxxxxx"

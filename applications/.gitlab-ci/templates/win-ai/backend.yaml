@@ -1,0 +1,28 @@
+ai-backend-build:
+  extends: .assume_role
+  image:
+    name: amazon/aws-cli:2.34.18
+    entrypoint: [""]
+  stage: build
+  script:
+    - yum install docker git -y
+    - docker --version
+    - docker info
+    - chmod +x .gitlab-ci/scripts/backend/win-ai/backend-build.sh
+    - ./.gitlab-ci/scripts/backend/win-ai/backend-build.sh
+  rules:
+    - if: '$PIPELINE_TYPE == "backend" && $service == "win-ai"'
+
+ai-backend-deploy:
+  extends: .assume_role
+  image:
+    name: amazon/aws-cli:2.34.18
+    entrypoint: [""]
+  stage: deploy
+  script:
+    - chmod +x .gitlab-ci/scripts/backend/win-ai/backend-deploy.sh
+    - ./.gitlab-ci/scripts/backend/win-ai/backend-deploy.sh
+  rules:
+    - if: '$PIPELINE_TYPE == "backend" && $environment == "dev" && $service == "win-ai"'
+      variables:
+        TARGET_INSTANCE_ID: "i-0e52bbc87081a23fb"

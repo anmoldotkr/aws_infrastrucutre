@@ -1,0 +1,21 @@
+variables:
+  PIPELINE_TYPE:
+    value: "frontend"
+    options:
+      - "frontend"
+      - "backend"
+    description: "Select which pipeline flow to execute"
+  environment:
+    value: "dev"
+    options:
+      - "dev"
+      - "stage"
+      - "prod"
+  product:
+    value: "xyzdev"
+  service:
+    value: "xyz-web"
+    options:
+      - "xyz-web"
+      - "node"
+      - "xyz-ai"

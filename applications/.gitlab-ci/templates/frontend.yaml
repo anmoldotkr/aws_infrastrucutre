@@ -1,0 +1,33 @@
+include:
+  - local: ".gitlab-ci/templates/awscli.yaml"
+
+stages:
+  - build
+  - deploy
+
+frontend-build:
+  stage: build
+  image: node:20
+  script:
+    - chmod +x .gitlab-ci/scripts/frontend/frontend-build.sh
+    - ./.gitlab-ci/scripts/frontend/frontend-build.sh
+  artifacts:
+    paths:
+      - win-web/apps/web/dist/
+    expire_in: 1 day
+  rules:
+    - if: '$PIPELINE_TYPE == "frontend"'
+
+frontend-deploy:
+  extends: .assume_role
+  stage: deploy
+  image:
+    name: amazon/aws-cli:2.34.18
+    entrypoint: [""]
+  dependencies:
+    - frontend-build
+  script:
+    - chmod +x .gitlab-ci/scripts/frontend/frontend-deploy.sh
+    - ./.gitlab-ci/scripts/frontend/frontend-deploy.sh
+  rules:
+    - if: '$PIPELINE_TYPE == "frontend"'
