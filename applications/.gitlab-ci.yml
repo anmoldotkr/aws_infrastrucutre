@@ -1,0 +1,16 @@
+include:
+  - local: ".gitlab-ci/templates/backend.yaml"
+  - local: ".gitlab-ci/templates/frontend.yaml"
+  - local: ".gitlab-ci/templates/variables.yaml"
+  - local: ".gitlab-ci/templates/awscli.yaml"
+  - local: ".gitlab-ci/templates/win-ai/backend.yaml"
+default:
+  tags:
+    - wincircle
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+
+stages:
+  - build
+  - deploy
