@@ -1,0 +1,206 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "EC2 instance in private subnet with t3a.medium and required software on Ubuntu"
+
+Parameters:
+  environment:
+    Type: String
+    Default: "dev"
+  product:
+    Type: String
+    Default: "windev"
+  instanceType:
+    Type: String
+    Default: "t3a.medium"
+    Description: "EC2 instance type"
+  keyPairName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: Existing EC2 Key Pair name
+Resources:
+  # ── IAM Role ────────────────────────────────────────────────────────────────
+  ec2SSMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+        - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
+      Policies:
+        - PolicyName: EC2S3Access
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:ListBucket
+                  - s3:DeleteObject
+                  - secretsmanager:GetSecretValue
+                  - secretsmanager:DescribeSecret
+                Resource: "*"
+
+  # ── Instance Profile ─────────────────────────────────────────────────────────
+  ec2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref ec2SSMRole
+
+  # ── EC2 Instance ─────────────────────────────────────────────────────────────
+  ec2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref instanceType
+      KeyName: !Ref keyPairName
+      ImageId: !Sub "{{resolve:ssm:/aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id}}"
+      SubnetId: !ImportValue
+        'Fn::Sub': "${environment}-${product}-privateSubnet1"
+      SecurityGroupIds:
+        - !ImportValue
+            'Fn::Sub': "${environment}-${product}-general-sg"
+      IamInstanceProfile: !Ref ec2InstanceProfile
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+
+          set -eux
+
+          # log everything (VERY IMPORTANT for debugging)
+          exec > /var/log/user-data.log 2>&1
+
+          echo "Starting user-data at $(date)"
+
+          # wait for NAT + network to stabilize (CRITICAL for private EC2)
+          sleep 60
+
+          # retry function (handles NAT/DNS delays)
+          retry() {
+            local n=0
+            local max=10
+            local delay=10
+
+            until "$@"; do
+              n=$((n+1))
+              if [ $n -ge $max ]; then
+                echo "Command failed after $max attempts: $*"
+                return 1
+              fi
+              echo "Retry $n/$max: $*"
+              sleep $delay
+            done
+          }
+
+          # Update system (with retry)
+          retry apt-get update -y
+
+          # Install base dependencies
+          retry apt-get install -y \
+            curl \
+            wget \
+            unzip \
+            gnupg \
+            software-properties-common \
+            build-essential \
+            python3 \
+            python3-pip \
+            python3-dev \
+            ca-certificates \
+            lsb-release
+
+          # Install AWS CLI v2
+          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o awscliv2.zip
+          unzip awscliv2.zip
+          ./aws/install
+          rm -rf aws awscliv2.zip
+
+          # Install Node.js 20
+          retry curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+          retry apt-get install -y nodejs
+          npm install -g npm@latest
+
+          # Install Docker
+          install -m 0755 -d /etc/apt/keyrings
+
+          curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
+            | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+
+          chmod a+r /etc/apt/keyrings/docker.gpg
+
+          echo \
+            "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
+            https://download.docker.com/linux/ubuntu \
+            $(. /etc/os-release && echo $VERSION_CODENAME) stable" \
+            > /etc/apt/sources.list.d/docker.list
+
+          retry apt-get update -y
+
+          retry apt-get install -y \
+            docker-ce \
+            docker-ce-cli \
+            containerd.io \
+            docker-buildx-plugin \
+            docker-compose-plugin
+
+          systemctl enable docker
+          systemctl start docker
+
+          usermod -aG docker ubuntu
+
+          mkdir -p /home/ubuntu/app
+          chown ubuntu:ubuntu /home/ubuntu/app
+
+          apt-get clean
+          rm -rf /var/lib/apt/lists/*
+          echo "User data completed at $(date)" >> /var/log/user-data.log
+          echo "Python: $(python3 --version)" >> /var/log/user-data.log
+          echo "AWS CLI: $(aws --version)" >> /var/log/user-data.log
+          echo "Node: $(node --version)" >> /var/log/user-data.log
+          echo "NPM: $(npm --version)" >> /var/log/user-data.log
+          echo "Docker: $(docker --version)" >> /var/log/user-data.log
+      Tags:
+        - Key: Name
+          Value: !Sub "${environment}-${product}-ec2-private"
+        - Key: Environment
+          Value: !Ref environment
+        - Key: Product
+          Value: !Ref product
+        - Key: OS
+          Value: "Ubuntu"
+
+Outputs:
+  ec2InstanceId:
+    Description: EC2 Instance ID
+    Value: !Ref ec2Instance
+    Export:
+      Name: !Sub "${environment}-${product}-ec2"
+
+  ec2PrivateIp:
+    Description: Private IP of EC2 Instance
+    Value: !GetAtt ec2Instance.PrivateIp
+    Export:
+      Name: !Sub "${environment}-${product}-ec2-private-ip"
+
+  ec2InstanceType:
+    Description: EC2 Instance Type
+    Value: !Ref instanceType
+    Export:
+      Name: !Sub "${environment}-${product}-ec2-instance-type"
+
+  ec2AvailabilityZone:
+    Description: Availability Zone of EC2 Instance
+    Value: !GetAtt ec2Instance.AvailabilityZone
+    Export:
+      Name: !Sub "${environment}-${product}-ec2AvailabilityZone"
+
+  securityGroupId:
+    Description: Security Group ID being used
+    Value: !ImportValue
+      'Fn::Sub': "${environment}-${product}-general-sg"
+    Export:
+      Name: !Sub "${environment}-${product}-ec2-sg"

@@ -1,0 +1,23 @@
+variables:
+  PIPELINE_TYPE:
+    value: "infra"
+    options:
+      - "infra"
+    description: "Select which pipeline flow to execute"
+  environment:
+    value: "dev"
+    options:
+      - dev
+      - stage
+      - prod
+    description: "select environment"
+
+  product:
+    value: "windev"
+    description: "select the project name"
+  service:
+    value: ""
+    description: "select the service name (vpc, s3 etc)"
+  iacType:
+    value: ""
+    description: "iacType name (vpc, s3 etc)"

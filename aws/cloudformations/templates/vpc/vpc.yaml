@@ -1,0 +1,285 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: CloudFormation template to create a VPC with public/private subnets
+
+Parameters:
+  environment:
+    Description: Environment type
+    Type: String
+    AllowedValues:
+      - dev
+      - stage
+      - prod
+  product:
+    Description: Name of the product or part of the project
+    Type: String
+  service:
+    Description: Name of the Service
+    Type: String
+Mappings:
+  dev:
+    "902916047754":
+      cidr: 10.0.0.0/16
+Resources:
+  vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !FindInMap [!Ref environment, !Ref AWS::AccountId, cidr]
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${environment}-${product}-${service}
+
+  internetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub ${environment}-${product}-igw
+
+  gatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref vpc
+      InternetGatewayId: !Ref internetGateway
+
+  publicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref vpc
+      CidrBlock: !Select [0, !Cidr [!GetAtt vpc.CidrBlock, 8, 8]]
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${environment}-${product}-publicSubnet1
+  publicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref vpc
+      CidrBlock: !Select [1, !Cidr [!GetAtt vpc.CidrBlock, 8, 8]]
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${environment}-${product}-publicSubnet2
+
+  publicSubnet3:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref vpc
+      CidrBlock: !Select [2, !Cidr [!GetAtt vpc.CidrBlock, 8, 8]]
+      AvailabilityZone: !Select [2, !GetAZs ""]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${environment}-${product}-publicSubnet3
+
+  publicSubnet4:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref vpc
+      CidrBlock: !Select [3, !Cidr [!GetAtt vpc.CidrBlock, 8, 8]]
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${environment}-${product}-publicSubnet4
+
+  privateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref vpc
+      CidrBlock: !Select [4, !Cidr [!GetAtt vpc.CidrBlock, 8, 8]]
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${environment}-${product}-privateSubnet1
+
+  privateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref vpc
+      CidrBlock: !Select [5, !Cidr [!GetAtt vpc.CidrBlock, 8, 8]]
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${environment}-${product}-privateSubnet2
+
+  privateSubnet3:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref vpc
+      CidrBlock: !Select [6, !Cidr [!GetAtt vpc.CidrBlock, 8, 8]]
+      AvailabilityZone: !Select [2, !GetAZs ""]
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${environment}-${product}-privateSubnet3
+
+  privateSubnet4:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref vpc
+      CidrBlock: !Select [7, !Cidr [!GetAtt vpc.CidrBlock, 8, 8]]
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${environment}-${product}-privateSubnet4
+
+  publicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref vpc
+      Tags:
+        - Key: Name
+          Value: !Sub ${environment}-${product}-publicRouteTable
+
+  publicDefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn: gatewayAttachment
+    Properties:
+      RouteTableId: !Ref publicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref internetGateway
+
+  publicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref publicSubnet1
+      RouteTableId: !Ref publicRouteTable
+
+  publicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref publicSubnet2
+      RouteTableId: !Ref publicRouteTable
+  publicSubnet3RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref publicSubnet3
+      RouteTableId: !Ref publicRouteTable
+  publicSubnet4RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref publicSubnet4
+      RouteTableId: !Ref publicRouteTable
+  privateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref vpc
+      Tags:
+        - Key: Name
+          Value: !Sub ${environment}-${product}-privateRouteTable
+  generalSecurityGroup:
+      Type: AWS::EC2::SecurityGroup
+      Properties:
+        GroupDescription: NAT Instance and General EC2 Security Group
+        VpcId: !Ref vpc
+        
+        SecurityGroupIngress:
+          # Allow all traffic from within VPC
+          - IpProtocol: -1
+            CidrIp: !FindInMap [!Ref environment, !Ref AWS::AccountId, cidr]
+        SecurityGroupEgress:
+          # Allow all outbound
+          - IpProtocol: -1
+            CidrIp: 0.0.0.0/0
+
+        Tags:
+          - Key: Name
+            Value: !Sub "${environment}-${product}-general-sg"
+
+  privateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref privateSubnet1
+      RouteTableId: !Ref privateRouteTable
+
+  privateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref privateSubnet2
+      RouteTableId: !Ref privateRouteTable
+  privateSubnet3RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref privateSubnet3
+      RouteTableId: !Ref privateRouteTable
+  privateSubnet4RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref privateSubnet4
+      RouteTableId: !Ref privateRouteTable
+Outputs:
+  vpcId:
+    Description: VPC ID
+    Value: !Ref vpc
+    Export:
+      Name: !Sub "${environment}-${product}-vpc"
+
+  vpcCidr:
+    Description: VPC CIDR block
+    Value: !GetAtt vpc.CidrBlock
+    Export:
+      Name: !Sub "${environment}-${product}-vpcCidr"
+
+  publicSubnet1Id:
+    Description: Public Subnet 1 ID
+    Value: !Ref publicSubnet1
+    Export:
+      Name: !Sub "${environment}-${product}-publicSubnet1"
+
+  publicSubnet2Id:
+    Description: Public Subnet 2 ID
+    Value: !Ref publicSubnet2
+    Export:
+      Name: !Sub "${environment}-${product}-publicSubnet2"
+  publicSubnet3Id:
+    Description: Public Subnet 3 ID
+    Value: !Ref publicSubnet3
+    Export:
+      Name: !Sub "${environment}-${product}-publicSubnet3"
+  publicSubnet4Id:
+    Description: Public Subnet 4 ID
+    Value: !Ref publicSubnet4
+    Export:
+      Name: !Sub "${environment}-${product}-publicSubnet4"
+  privateSubnet1Id:
+    Description: Private Subnet 1 ID
+    Value: !Ref privateSubnet1
+    Export:
+      Name: !Sub "${environment}-${product}-privateSubnet1"
+  privateSubnet2Id:
+    Description: Private Subnet 2 ID
+    Value: !Ref privateSubnet2
+    Export:
+      Name: !Sub "${environment}-${product}-privateSubnet2"
+  privateSubnet3Id:
+    Description: Private Subnet 3 ID
+    Value: !Ref privateSubnet3
+    Export:
+      Name: !Sub "${environment}-${product}-privateSubnet3"
+  privateSubnet4Id:
+    Description: Private Subnet 4 ID
+    Value: !Ref privateSubnet4
+    Export:
+      Name: !Sub "${environment}-${product}-privateSubnet4"
+  generalSecurityGroup:
+    Description: General Security Group ID for NAT Instance and EC2
+    Value: !Ref generalSecurityGroup
+    Export:
+      Name: !Sub "${environment}-${product}-general-sg"
+  publicRouteTableId:
+    Description: Public Route Table ID
+    Value: !Ref publicRouteTable
+    Export:
+      Name: !Sub "${environment}-${product}-publicRouteTable"
+  privateRouteTableId:
+    Description: Private Route Table ID
+    Value: !Ref privateRouteTable
+    Export:
+      Name: !Sub "${environment}-${product}-privateRouteTable"

@@ -1,0 +1,14 @@
+include:
+  - local: ".gitlab-ci/templates/awscli.yaml"
+
+infra_deploy_job:
+  stage: infra-deploy
+  extends: .assume_role
+  image:
+    name: amazon/aws-cli:2.34.18
+    entrypoint: [""]
+  script:
+    - ls -la .gitlab-ci/scripts/
+    - ./.gitlab-ci/scripts/infradeploy.sh
+  rules:
+    - if: '$PIPELINE_TYPE == "infra"'

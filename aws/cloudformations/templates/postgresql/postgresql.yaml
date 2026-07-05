@@ -1,0 +1,144 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Single-AZ PostgreSQL 18.3 RDS instance with imported VPC,
+
+Parameters:
+  environment:
+    Type: String
+  product:
+    Type: String
+  service:
+    Type: String
+  DBInstanceClass:
+    Type: String
+    Default: db.t3.medium
+    Description: RDS instance class
+    AllowedValues:
+      - db.t3.micro
+      - db.t3.small
+      - db.t3.medium
+      - db.t3.large
+      - db.m6g.large
+  dbAllocatedStorage:
+    Type: Number
+    Default: 20
+  MultiAZ:
+    Type: String
+    Default: 'false'
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Description: Single-AZ deployment — keep false
+
+  BackupRetentionPeriod:
+    Type: Number
+    Default: 7
+Resources:
+  DBSecurityGroup:
+      Type: AWS::EC2::SecurityGroup
+      Properties:
+        GroupName: !Sub "${environment}-${product}-rds-sg"
+        GroupDescription: Security group for PostgreSQL RDS instance
+        VpcId: !ImportValue
+          'Fn::Sub': "${environment}-${product}-vpc"
+
+        SecurityGroupIngress:
+          - IpProtocol: tcp
+            FromPort: 5432
+            ToPort: 5432
+            SourceSecurityGroupId: !ImportValue
+              'Fn::Sub': "${environment}-${product}-general-sg"
+            Description: "Allow PostgreSQL from general Security Group"
+
+        SecurityGroupEgress:
+          - IpProtocol: "-1"
+            CidrIp: 0.0.0.0/0
+            Description: "Allow all outbound traffic"
+
+        Tags:
+          - Key: Name
+            Value: !Sub "${environment}-${product}-rds-sg"
+          - Key: Environment
+            Value: !Ref environment
+          - Key: Product
+            Value: !Ref product
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupName: !Sub "${environment}-${product}-db-subnet-group"
+      DBSubnetGroupDescription: !Sub "Subnet group for ${environment}-${product} PostgreSQL RDS"
+      SubnetIds:
+        - !ImportValue
+          'Fn::Sub': "${environment}-${product}-privateSubnet1"
+        - !ImportValue
+          'Fn::Sub': "${environment}-${product}-privateSubnet2"
+      Tags:
+        - Key: Name
+          Value: !Sub "${environment}-${product}-db-subnet-group"
+        - Key: Environment
+          Value: !Ref environment
+        - Key: Product
+          Value: !Ref product
+
+  PostgresDBInstance:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Snapshot
+    UpdateReplacePolicy: Snapshot
+    Properties:
+      DBInstanceIdentifier: !Sub "${environment}-${product}-${service}"
+      DBName: !Sub "${environment}_${product}"
+      DBInstanceClass: !Ref DBInstanceClass
+      Engine: postgres
+      EngineVersion: "18.3"
+      MasterUsername: !Sub "{{resolve:secretsmanager:${environment}/${product}/db/creds:SecretString:WIN_POSTGRES_USER}}"
+      MasterUserPassword: !Sub "{{resolve:secretsmanager:${environment}/${product}/db/creds:SecretString:WIN_POSTGRES_PASSWORD}}"
+      AllocatedStorage: !Ref dbAllocatedStorage
+      StorageType: gp3
+      StorageEncrypted: true
+      MultiAZ: !Ref MultiAZ 
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      VPCSecurityGroups:
+        - !ImportValue
+            'Fn::Sub': "${environment}-${product}-general-sg"
+      PubliclyAccessible: false
+      AutoMinorVersionUpgrade: true
+      BackupRetentionPeriod: !Ref BackupRetentionPeriod
+      PreferredBackupWindow: "02:00-03:00"
+      PreferredMaintenanceWindow: "sun:04:00-sun:05:00"
+      EnablePerformanceInsights: true
+      PerformanceInsightsRetentionPeriod: 7
+      EnableCloudwatchLogsExports:
+        - postgresql
+        - upgrade
+      DeletionProtection: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${environment}-${product}-${service}" 
+        - Key: Environment
+          Value: !Ref environment
+        - Key: Product
+          Value: !Ref product
+
+Outputs:
+  DBInstanceEndpoint:
+    Description: RDS PostgreSQL endpoint address
+    Value: !GetAtt PostgresDBInstance.Endpoint.Address
+    Export:
+      Name: !Sub "${environment}-${product}-db-endpoint"
+
+  DBInstancePort:
+    Description: RDS PostgreSQL port
+    Value: !GetAtt PostgresDBInstance.Endpoint.Port
+    Export:
+      Name: !Sub "${environment}-${product}-db-port"
+
+  DBSecurityGroupId:
+    Description: Security Group ID attached to the RDS instance
+    Value: !GetAtt DBSecurityGroup.GroupId
+    Export:
+      Name: !Sub "${environment}-${product}-rds-sg"
+
+  DBSubnetGroupName:
+    Description: DB Subnet Group name
+    Value: !Ref DBSubnetGroup
+    Export:
+      Name: !Sub "${environment}-${product}-db-subnet-group"

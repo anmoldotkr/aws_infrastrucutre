@@ -1,0 +1,169 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Creates a t3.micro NAT instance for a private subnet'
+
+Parameters:
+  instanceType:
+    Type: String
+    Default: 't3.micro'
+    Description: 'EC2 instance type'
+  environment:
+    Type: String
+    Description: 'Environment name (e.g. dev, prod)'
+  product:
+    Type: String
+    Description: 'Product name'
+  keyPairName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: Existing EC2 Key Pair name
+Resources:
+  # ── SSM Role ────────────────────────────────────────────────────────────────
+  NATInstanceRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: !Sub "${environment}-${product}-nat-instance-role"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore'
+
+  NATInstanceProfile:
+    Type: 'AWS::IAM::InstanceProfile'
+    Properties:
+      InstanceProfileName: !Sub "${environment}-${product}-nat-instance-profile"
+      Roles:
+        - !Ref NATInstanceRole
+
+  # ── Security Group ───────────────────────────────────────────────────────────
+  NATSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: NAT Instance Security Group
+      VpcId: !ImportValue
+        'Fn::Sub': "${environment}-${product}-vpc"
+
+      SecurityGroupIngress:
+        - IpProtocol: -1
+          CidrIp: !ImportValue
+            'Fn::Sub': "${environment}-${product}-vpcCidr"
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !ImportValue
+            'Fn::Sub': "${environment}-${product}-vpcCidr"
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub "${environment}-${product}-nat-sg"
+
+  natInstance:
+    Type: 'AWS::EC2::Instance'
+    Properties:
+      InstanceType: !Ref instanceType
+      KeyName: !Ref keyPairName
+      SubnetId: !ImportValue
+        'Fn::Sub': "${environment}-${product}-publicSubnet1"
+      ImageId: !Sub "{{resolve:ssm:/aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id}}"
+      IamInstanceProfile: !Ref NATInstanceProfile
+      SecurityGroupIds:
+        - !Ref NATSecurityGroup
+      SourceDestCheck: false
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+
+          set -eux
+
+          # Enable IP forwarding
+          sysctl -w net.ipv4.ip_forward=1
+          echo "net.ipv4.ip_forward=1" > /etc/sysctl.d/custom-ip-forwarding.conf
+          sysctl --system
+
+          # Install iptables
+          export DEBIAN_FRONTEND=noninteractive
+
+          apt-get update -y
+          apt-get install -y iptables iptables-persistent
+
+          # Configure NAT
+          PRIMARY_IF=$(ip route | awk '/default/ {print $5}')
+          iptables -t nat -A POSTROUTING -o $PRIMARY_IF -j MASQUERADE
+
+          # Persist rules
+          iptables-save > /etc/iptables/rules.v4
+
+          netfilter-persistent save
+          systemctl enable netfilter-persistent
+      Tags:
+        - Key: Name
+          Value: !Sub "${environment}-${product}-nat-instance"
+        - Key: Environment
+          Value: !Ref environment
+        - Key: Product
+          Value: !Ref product
+
+  # ── Elastic IP ───────────────────────────────────────────────────────────────
+  natElasticIP:
+    Type: 'AWS::EC2::EIP'
+    Properties:
+      Domain: vpc
+
+  EIPAssociation:
+    Type: 'AWS::EC2::EIPAssociation'
+    Properties:
+      AllocationId: !GetAtt natElasticIP.AllocationId
+      InstanceId: !Ref natInstance
+
+  PrivateDefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn:
+      - natInstance
+      - EIPAssociation
+    Properties:
+      RouteTableId: !ImportValue
+        'Fn::Sub': "${environment}-${product}-privateRouteTable"
+      DestinationCidrBlock: 0.0.0.0/0
+      InstanceId: !Ref natInstance
+# ── Outputs ──────────────────────────────────────────────────────────────────
+Outputs:
+  NATInstanceId:
+    Description: 'Instance ID of the NAT instance'
+    Value: !Ref natInstance
+    Export:
+      Name: !Sub "${environment}-${product}-nat-instance-id"
+
+  NATInstancePrivateIP:
+    Description: 'Private IP of the NAT instance'
+    Value: !GetAtt natInstance.PrivateIp
+    Export:
+      Name: !Sub "${environment}-${product}-nat-instance-private-ip"
+
+  NATElasticIP:
+    Description: 'Elastic (public) IP of the NAT instance'
+    Value: !Ref natElasticIP
+    Export:
+      Name: !Sub "${environment}-${product}-nat-eip"
+
+  NATElasticIPAllocationId:
+    Description: 'Allocation ID of the NAT Elastic IP'
+    Value: !GetAtt natElasticIP.AllocationId
+    Export:
+      Name: !Sub "${environment}-${product}-nat-eip-allocation-id"
+
+  NATSecurityGroupId:
+    Description: 'Security Group ID of the NAT instance'
+    Value: !Ref NATSecurityGroup
+    Export:
+      Name: !Sub "${environment}-${product}-nat-sg-id"
+
+  NATInstanceRoleArn:
+    Description: 'ARN of the NAT instance IAM role'
+    Value: !GetAtt NATInstanceRole.Arn
+    Export:
+      Name: !Sub "${environment}-${product}-nat-instance-role-arn"

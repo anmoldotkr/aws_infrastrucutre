@@ -1,0 +1,16 @@
+include:
+  - local: ".gitlab-ci/templates/vpc.yaml"
+  - local: ".gitlab-ci/templates/s3withCdn.yaml"
+  - local: ".gitlab-ci/templates/variables.yaml"
+  - local: ".gitlab-ci/templates/secrets.yaml"
+  - local: ".gitlab-ci/templates/postgresql.yaml"
+default:
+  tags:
+    - wincircle
+
+workflow:
+   rules:
+    - if: '$CI_PIPELINE_SOURCE == "web"'
+    
+stages:
+  - infra-deploy
