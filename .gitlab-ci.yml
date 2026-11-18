@@ -6,7 +6,7 @@ include:
   - local: ".gitlab-ci/templates/postgresql.yaml"
 default:
   tags:
-    - wincircle
+    - <product-name>
 
 workflow:
    rules:
